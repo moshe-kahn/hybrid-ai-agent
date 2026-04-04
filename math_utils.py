@@ -25,7 +25,7 @@ def should_force_calculator(user_input):
     if any(word in text for word in keywords):
         return True
     
-    # phrase-based math patterns
+    # Catch natural-language math requests even when they do not contain operator symbols yet.
     if re.search(r"\b(half|quarter)\s+of\b", text):
         return True
 
@@ -78,6 +78,7 @@ def convert_number_phrases(text):
         if phrase_tokens:
             phrase = " ".join(phrase_tokens)
             try:
+                # Convert the longest contiguous run of number words in one pass.
                 result.append(str(w2n.word_to_num(phrase)))
                 i = j
                 continue
@@ -114,10 +115,9 @@ def extract_math_expression(user_input):
     text = normalize_negative_phrases(text)
     text = normalize_decimal_phrases(text)
 
-    # handle "half of X"
+    # Rewrite supported English math phrases into calculator-friendly expressions.
     text = re.sub(r"\bhalf of (\d+(?:\.\d+)?)\b", r"\1 / 2", text)
 
-    # handle "quarter of X"
     text = re.sub(r"\bquarter of (\d+(?:\.\d+)?)\b", r"\1 / 4", text)
     text = re.sub(r"\bsum of (\d+(?:\.\d+)?) and (\d+(?:\.\d+)?)\b", r"\1 + \2", text)
     text = re.sub(r"\bdifference between (\d+(?:\.\d+)?) and (\d+(?:\.\d+)?)\b", r"\1 - \2", text)

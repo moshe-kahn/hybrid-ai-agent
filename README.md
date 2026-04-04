@@ -41,9 +41,18 @@ The system prioritizes:
 
 * **Execution modes**
 
-  * `normal` — clean output
+  * `normal` — clean output with a compact waiting indicator
   * `verbose` — shows internal steps
   * `debug` — disables LLM calls (for testing)
+
+* **Interactive CLI controls**
+
+  * `s` stops a running query and returns to the prompt
+  * `q`, `quit`, or `exit` quits the program
+
+* **Built-in self test**
+
+  * Verifies API key presence, connectivity, model access, and response generation
 
 * **Error handling**
 
@@ -105,13 +114,15 @@ Error in calculation: invalid syntax
 
 ## Modes
 
-Set in `agent.py`:
+Selected from the command line:
 
 ```
-MODE = "normal"    # clean output
-MODE = "verbose"   # show internal steps
-MODE = "debug"     # no LLM calls
+py main.py --mode normal
+py main.py --mode verbose
+py main.py --mode debug
 ```
+
+If no `--mode` is provided, the app keeps its default behavior.
 
 ---
 
@@ -158,6 +169,27 @@ tools.py        # calculator + search
 ```
 py main.py
 ```
+
+### Self Test
+
+```
+py main.py --self-test
+```
+
+This runs a progressive check of:
+
+* API key presence
+* DNS resolution
+* raw HTTPS access
+* authenticated model access
+* model availability
+* response generation
+
+### While Running
+
+* Press `s` during a request to stop waiting and return to the prompt
+* Press `q` during a request to quit immediately
+* Type `q`, `quit`, or `exit` at the prompt to quit
 
 ---
 
