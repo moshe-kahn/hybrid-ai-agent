@@ -1,0 +1,35 @@
+# Session Notes
+
+Use this file for dated summaries of meaningful work completed during a session. Keep entries short and high-signal.
+
+## 2026-04-04
+
+- Added CLI mode selection and then split runtime configuration into `mode`, `output`, and `connection`.
+- Added interactive request controls:
+  - `s` stops waiting and returns to the prompt
+  - `q` quits immediately during an in-flight request
+- Added `--self-test` with progressive checks for key presence, DNS, HTTPS reachability, authenticated model access, model availability, and response generation.
+- Diagnosed that the OpenAI SDK response path was hanging in this environment even though raw API access worked.
+- Replaced SDK response calls with direct `httpx` requests to `/v1/responses`.
+- Added app-level timeout handling around LLM calls.
+- Added `scripts/smoke_test.py` for a minimal automation-friendly smoke test.
+- Fixed wait-thread cleanup so the process does not crash on shutdown after smoke tests.
+- Centralized debug output behind a small helper and added timing output for timed request paths in debug mode.
+- Expanded smoke coverage with an additional stable natural-language calculator check.
+- Added concise completion summaries for timed LLM calls, including elapsed time and token usage when available.
+- Added an optional `--verbose` mode to the smoke test while keeping default output concise.
+- Split CLI runtime configuration into `mode`, `output`, and `connection`.
+- Added lightweight shared run logging with automatic `logs/latest.log` creation and optional extra log-file append support.
+- Refined normal-mode wait UX so `waiting...` finalizes into a clean completion/failure line.
+- Kept friendly completion summaries minimal and limited model/token detail to verbose/debug output.
+- Removed successful completion summaries from friendly output so it goes straight from waiting to the answer.
+- Shortened verbose/debug calculator failure logs to avoid duplicate error text.
+- Simplified verbose/debug LLM status logging to `LLM:<model>` and removed redundant completion follow-up lines.
+- Switched verbose/debug LLM labels to bracketed form and suppressed unchanged corrected-input logs.
+- Fixed verbose/debug wait-line formatting to avoid double brackets.
+- Tightened the LLM prompts to prefer one-sentence answers where possible.
+- Updated the README with the new CLI behavior.
+- Added `docs/CONTEXT.md` as a live handoff file for project state.
+- Synced the docs with the current CLI behavior, runtime config split, and logging support.
+- Changed self-test output to use `[PASS]`/`[FAIL]` prefixes instead of `[SELF-TEST] ... PASS/FAIL`.
+- Removed the extra blank line left behind by friendly-mode wait cleanup after successful LLM calls.

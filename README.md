@@ -1,6 +1,6 @@
 # Hybrid AI Agent
 
-A lightweight Python agent that routes user input between deterministic computation, language model reasoning, and external tools.
+A lightweight Python CLI agent that routes user input between deterministic computation, language model reasoning, and external tools.
 
 ---
 
@@ -21,7 +21,7 @@ The system prioritizes:
 * **Calculator-first execution**
 
   * Evaluates math locally using a safe AST parser
-  * Supports natural language math (e.g. `twenty-two plus five`)
+  * Supports natural language math such as `twenty-two plus five`
 
 * **Spell correction preprocessing**
 
@@ -30,20 +30,18 @@ The system prioritizes:
 
 * **Hybrid routing**
 
-  * LLM decides between:
-
-    * direct response
-    * tool usage (search)
+  * LLM decides between direct response and tool usage
 
 * **Search integration**
 
   * Uses DuckDuckGo for external queries
 
-* **Execution modes**
+* **Runtime configuration**
 
-  * `normal` — clean output with a compact waiting indicator
-  * `verbose` — shows internal steps
-  * `debug` — disables LLM calls (for testing)
+  * `--mode normal` defaults to friendly output with API-backed LLM calls
+  * `--mode debug` defaults to verbose output with local-only behavior
+  * `--output verbose` enables internal status logging without changing mode
+  * `--connection local` skips LLM calls without changing mode
 
 * **Interactive CLI controls**
 
@@ -53,29 +51,29 @@ The system prioritizes:
 * **Built-in self test**
 
   * Verifies API key presence, connectivity, model access, and response generation
+  * Uses the same `[PASS]` / `[FAIL]` style as the smoke test
 
-* **Error handling**
+* **Shared logging**
 
-  * Graceful API fallback
-  * Transparent calculator errors in debug mode
+  * Writes run output to `logs/latest.log`
+  * Supports an optional extra append log via `--log-file`
 
 ---
 
 ## Architecture
 
-```
+```text
 User Input
-    ↓
+  ->
 Spell Correction
-    ↓
+  ->
 Routing Logic
-    ├── Calculator (deterministic)
-    │       ├── success → return result
-    │       └── failure → LLM fallback
-    │
-    └── LLM Router
-            ├── search_tool → tool → LLM synthesis
-            └── none → direct response
+  |- Calculator (deterministic)
+  |    |- success -> return result
+  |    `- failure -> LLM fallback when API connection is enabled
+  `- LLM Router
+       |- search_tool -> tool -> LLM synthesis
+       `- none -> direct response
 ```
 
 ---
@@ -84,28 +82,28 @@ Routing Logic
 
 ### Math
 
-```
+```text
 >> twenty-two plus five
 27
 ```
 
 ### Definition
 
-```
+```text
 >> what is FastAPI
 FastAPI is a modern...
 ```
 
-### External query
+### External Query
 
-```
+```text
 >> news today
 [uses search + LLM synthesis]
 ```
 
-### Debug mode
+### Debug-Style Local Behavior
 
-```
+```text
 >> 2++
 Error in calculation: invalid syntax
 ```
@@ -116,23 +114,32 @@ Error in calculation: invalid syntax
 
 Selected from the command line:
 
-```
+```text
 py main.py --mode normal
-py main.py --mode verbose
 py main.py --mode debug
+py main.py --mode normal --output verbose
+py main.py --mode normal --connection local
 ```
 
-If no `--mode` is provided, the app keeps its default behavior.
+Default resolution:
+
+* `--mode normal` -> `--output friendly` + `--connection api`
+* `--mode debug` -> `--output verbose` + `--connection local`
+
+You can override `--output` or `--connection` explicitly when you want a mixed configuration.
 
 ---
 
 ## Project Structure
 
-```
+```text
 main.py         # CLI entry point
 agent.py        # routing + orchestration
 math_utils.py   # parsing + detection
 tools.py        # calculator + search
+scripts/        # smoke tests
+docs/           # project memory and design notes
+logs/           # latest run log
 ```
 
 ---
@@ -140,25 +147,26 @@ tools.py        # calculator + search
 ## Tech Stack
 
 * Python
-* OpenAI API
-* DuckDuckGo (requests)
-* word2number
-* pyspellchecker
-* python-dotenv
+* OpenAI API via `httpx`
+* DuckDuckGo via `requests`
+* `word2number`
+* `pyspellchecker`
+* `python-dotenv`
 
 ---
 
 ## Setup
 
-1. Create a virtual environment
+1. Create a virtual environment.
 2. Install dependencies:
 
-   ```
+   ```text
    pip install -r requirements.txt
    ```
+
 3. Create a `.env` file:
 
-   ```
+   ```text
    OPENAI_API_KEY=your_key_here
    ```
 
@@ -166,13 +174,21 @@ tools.py        # calculator + search
 
 ## Run
 
-```
+```text
 py main.py
+```
+
+Useful variants:
+
+```text
+py main.py --mode normal --output verbose
+py main.py --mode debug
+py main.py --log-file logs/session.log
 ```
 
 ### Self Test
 
-```
+```text
 py main.py --self-test
 ```
 
@@ -198,16 +214,16 @@ This runs a progressive check of:
 * Use deterministic logic where possible
 * Use LLMs for reasoning, not everything
 * Keep components modular and inspectable
-* Make behavior debuggable via execution modes
+* Make behavior debuggable via execution modes and output/connection overrides
 
 ---
 
 ## Future Improvements
 
-* Better search provider (Brave, Tavily)
+* Better search provider support
 * Multi-step tool chaining
 * Conversation memory
-* Expanded math support (functions, units)
+* Expanded math support
 * Structured output enforcement
 
 ---

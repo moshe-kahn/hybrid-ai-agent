@@ -14,19 +14,18 @@ The system prioritizes correctness and efficiency by using non-LLM paths wheneve
 
 ## Execution Pipeline
 
-```
+```text
 User Input
-    ↓
+  ->
 Spell Correction (local)
-    ↓
+  ->
 Routing
-    ├── Calculator (deterministic)
-    │       ├── success → return result
-    │       └── failure → LLM fallback (disabled in debug)
-    │
-    └── LLM Router
-            ├── search_tool → tool → LLM synthesis
-            └── none → direct LLM response
+  |- Calculator (deterministic)
+  |    |- success -> return result
+  |    `- failure -> LLM fallback when API connection is enabled
+  `- LLM Router
+       |- search_tool -> tool -> LLM synthesis
+       `- none -> direct LLM response
 ```
 
 ---
@@ -44,21 +43,21 @@ Routing
 
 ---
 
-### 2. Calculator Path (Deterministic)
+### 2. Calculator Path
 
 * Triggered via `should_force_calculator()`
 * Uses:
 
-  * natural language parsing (`math_utils.py`)
-  * AST-based safe evaluation (`tools.py`)
+  * natural language parsing in `math_utils.py`
+  * AST-based safe evaluation in `tools.py`
 
-**Behavior:**
+Behavior:
 
 * Executes locally when possible
 * On failure:
 
-  * normal mode → LLM fallback
-  * debug mode → return error directly
+  * API connection mode -> direct LLM fallback
+  * local connection mode -> return calculator error directly
 
 ---
 
@@ -69,7 +68,7 @@ Routing
   * direct response
   * tool usage
 
-**Design goals:**
+Design goals:
 
 * Keep routing simple and inspectable
 * Avoid over-reliance on LLM for deterministic tasks
@@ -85,39 +84,49 @@ Current tools:
 
 Pattern:
 
-```
-LLM → tool → LLM (synthesis)
+```text
+LLM -> tool -> LLM
 ```
 
 ---
 
-### 5. Execution Modes
+### 5. Runtime Configuration
 
 Controlled via:
 
 ```python
-MODE = "normal" | "verbose" | "debug"
+MODE = "normal" | "debug"
+OUTPUT = "friendly" | "verbose"
+CONNECTION = "api" | "local"
 ```
 
-#### Normal
+Normal mode defaults:
 
-* No internal logs
-* Full functionality
+* `OUTPUT = "friendly"`
+* `CONNECTION = "api"`
+* Compact CLI output with a waiting indicator
 
-#### Verbose
+Debug mode defaults:
 
-* Prints:
+* `OUTPUT = "verbose"`
+* `CONNECTION = "local"`
+* Skips LLM calls and surfaces local/tool failures directly
+
+Output layer:
+
+* `friendly` keeps the CLI compact
+* `verbose` prints:
 
   * corrected input
   * routing decisions
   * tool calls
+  * wait status
   * raw LLM output
 
-#### Debug
+Connection layer:
 
-* Same as verbose
-* Disables all LLM calls
-* Returns raw calculator/tool errors
+* `api` allows direct `httpx` calls to `/v1/responses`
+* `local` skips LLM calls and returns local-mode messages or errors instead
 
 ---
 
@@ -125,7 +134,7 @@ MODE = "normal" | "verbose" | "debug"
 
 * **Deterministic first**
 
-  * Use code when correctness matters (math, parsing)
+  * Use code when correctness matters
 
 * **LLM as coordinator**
 
@@ -137,7 +146,7 @@ MODE = "normal" | "verbose" | "debug"
 
 * **Observability**
 
-  * Verbose/debug modes expose internal behavior
+  * Verbose output exposes internal behavior without requiring code changes
 
 ---
 
@@ -149,14 +158,14 @@ MODE = "normal" | "verbose" | "debug"
 * Search results are shallow
 * JSON parsing for routing can fail
 * No confidence scoring or validation
-* No structured logging (print-based only)
+* Logging is lightweight and file-based rather than structured tracing
 
 ---
 
 ## Future Architectural Direction
 
-* Tool registry (dynamic tool discovery)
-* Multi-provider routing (LLM + APIs)
+* Tool registry
+* Multi-provider routing
 * Planner/executor split
-* Stateful sessions (tool-specific memory)
+* Stateful sessions
 * Structured outputs for routing reliability

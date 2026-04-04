@@ -14,7 +14,7 @@ Examples:
 * `jokes`
 * `poems`
 
-**Goal:**
+Goal:
 
 * Reduce ambiguity
 * Increase control and interactivity
@@ -25,13 +25,13 @@ Examples:
 
 In calculator mode:
 
-1. Try local Python evaluation
-2. If it fails → send to Wolfram Alpha
-3. If that fails → stop and return error
+1. Try local Python evaluation.
+2. If it fails, send to Wolfram Alpha.
+3. If that fails, stop and return an error.
 
-**Do NOT fallback to LLM in forced calculator mode**
+Do not fall back to the LLM in forced calculator mode.
 
-**Goal:**
+Goal:
 
 * Make calculator behavior predictable and trustworthy
 
@@ -43,9 +43,9 @@ Enable tool-specific memory.
 
 Example:
 
-```
-2+2 → 4
-+3 → 7
+```text
+2+2 -> 4
++3 -> 7
 ```
 
 Future extensions:
@@ -62,13 +62,16 @@ Support:
 
 * CLI flags:
 
-  ```
+  ```text
   py main.py --mode debug
+  py main.py --mode normal --output verbose
   ```
+
 * In-session commands:
 
-  ```
-  /mode verbose
+  ```text
+  /mode debug
+  /output verbose
   ```
 
 ---
@@ -77,24 +80,24 @@ Support:
 
 Move model selection into config.
 
-Example:
+Examples:
 
-* `ai-lite` → fast/cheap model
-* `ai-heavy` → more capable model
+* `ai-lite` -> fast/cheap model
+* `ai-heavy` -> more capable model
 
 Sources:
 
 * `.env`
 * config file
 
-**Goal:**
+Goal:
 
 * Decouple code from model names
 * Enable easy switching
 
 ---
 
-### 6. Token Usage Reporting (Verbose Mode)
+### 6. Token Usage Reporting
 
 Display:
 
@@ -102,7 +105,7 @@ Display:
 * input tokens
 * output tokens
 
-**Goal:**
+Goal:
 
 * Improve cost visibility
 * Support optimization
@@ -115,10 +118,10 @@ Replace or augment DuckDuckGo with:
 
 * Brave Search
 * Tavily
-* Wolfram Alpha (math + conversions)
+* Wolfram Alpha
 * Dictionary APIs
 
-**Goal:**
+Goal:
 
 * Use expert tools per domain
 * Reduce reliance on LLM
@@ -127,12 +130,12 @@ Replace or augment DuckDuckGo with:
 
 ## Medium-Term Improvements
 
-* Tool registry system (dynamic tools)
-* Multi-provider routing (LLM + APIs + local models)
-* Improved math parsing (beyond regex)
+* Tool registry system
+* Multi-provider routing
+* Improved math parsing
 * Unit conversion tool
 * Confidence scoring for outputs
-* Structured logging/tracing
+* Structured logging and tracing
 * Retry logic and validation for routing
 * Caching repeated queries
 
@@ -142,25 +145,25 @@ Replace or augment DuckDuckGo with:
 
 * Conversational memory across sessions
 * Multi-step tool chaining
-* Planner + executor architecture
-* Evaluation / benchmarking framework
-* Web interface (FastAPI)
+* Planner and executor architecture
+* Evaluation and benchmarking framework
+* Web interface
 * Self-correction loop
 
 ---
 
 ## Experimental Ideas
 
-* Hybrid local + cloud LLM system (Ollama + API)
+* Hybrid local and cloud LLM system
 * Automatic tool selection based on query classification
-* Cost-aware routing (choose cheaper model/tool)
+* Cost-aware routing
 * Prompt optimization based on past performance
 
 ---
 
 ## Guiding Principle
 
-The goal is not to build a chatbot, but a **hybrid agent system** that:
+The goal is not to build a chatbot, but a hybrid agent system that:
 
 * Uses deterministic code where possible
 * Uses specialized APIs where appropriate

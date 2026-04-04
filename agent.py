@@ -4,6 +4,7 @@ import socket
 import sys
 import threading
 import time
+from pathlib import Path
 
 import httpx
 from dotenv import load_dotenv
@@ -13,16 +14,140 @@ from math_utils import should_force_calculator, extract_math_expression
 
 from spellchecker import SpellChecker
 
-# Valid modes: "normal", "verbose", "debug"
 MODE = "normal"
+OUTPUT = "friendly"
+CONNECTION = "api"
 LLM_TIMEOUT_SECONDS = 20.0
+LLM_MODEL = "gpt-5-nano"
 ACTIVE_REQUEST_STOP = threading.Event()
+LOG_HANDLES = []
 
-def is_verbose():
-    return MODE in ("verbose", "debug")
+def configure_runtime(mode, output, connection, log_paths):
+    global MODE, OUTPUT, CONNECTION
 
-def is_debug():
+    MODE = mode
+    OUTPUT = output
+    CONNECTION = connection
+
+    close_runtime()
+    for path in log_paths:
+        log_path = Path(path)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        file_mode = "w" if log_path.name == "latest.log" else "a"
+        LOG_HANDLES.append(log_path.open(file_mode, encoding="utf-8"))
+
+
+def close_runtime():
+    global LOG_HANDLES
+
+    for handle in LOG_HANDLES:
+        handle.close()
+    LOG_HANDLES = []
+
+
+def shared_log(message, *, stdout=True):
+    if stdout:
+        print(message)
+    for handle in LOG_HANDLES:
+        handle.write(message + "\n")
+        handle.flush()
+
+
+def is_normal_mode():
+    return MODE == "normal"
+
+
+def is_debug_mode():
     return MODE == "debug"
+
+
+def is_friendly_output():
+    return OUTPUT == "friendly"
+
+
+def is_verbose_output():
+    return OUTPUT == "verbose"
+
+
+def is_api_connection():
+    return CONNECTION == "api"
+
+
+def is_local_connection():
+    return CONNECTION == "local"
+
+
+def log_debug(message):
+    if is_verbose_output():
+        shared_log(message)
+
+
+def llm_status_label():
+    return f"[LLM:{LLM_MODEL}]"
+
+def format_usage_summary(response_data):
+    usage = response_data.get("usage")
+    if not isinstance(usage, dict):
+        return None
+
+    input_tokens = usage.get("input_tokens")
+    output_tokens = usage.get("output_tokens")
+
+    parts = []
+    if isinstance(input_tokens, int):
+        parts.append(f"{input_tokens} in")
+    if isinstance(output_tokens, int):
+        parts.append(f"{output_tokens} out")
+
+    return " • ".join(parts) if parts else None
+
+def print_completion_status(label, elapsed_seconds, response_data=None):
+    usage_summary = format_usage_summary(response_data) if isinstance(response_data, dict) else None
+    model_prefix = f"[{LLM_MODEL}] "
+
+    if is_debug_mode():
+        line = f"{model_prefix}[DONE] {label} completed in {elapsed_seconds:.2f}s"
+        if usage_summary:
+            line += f" | usage: {usage_summary}"
+        shared_log(line)
+        return
+
+    if is_verbose_output():
+        line = f"{model_prefix}[DONE] {label} completed in {elapsed_seconds:.2f}s"
+        if usage_summary:
+            line += f" | tokens: {usage_summary}"
+        shared_log(line)
+        return
+
+    line = f"{model_prefix}{elapsed_seconds:.1f}s"
+    if usage_summary:
+        line += f" • {usage_summary}"
+    shared_log(line)
+
+
+def format_completion_status(label, elapsed_seconds, response_data=None):
+    usage_summary = format_usage_summary(response_data) if isinstance(response_data, dict) else None
+    model_prefix = f"[{LLM_MODEL}] "
+
+    if is_debug_mode():
+        line = f"{label} completed in {elapsed_seconds:.2f}s"
+        if usage_summary:
+            line += f" | usage: {usage_summary}"
+        return line
+
+    if is_verbose_output():
+        line = f"{label} completed in {elapsed_seconds:.2f}s"
+        if usage_summary:
+            line += f" | tokens: {usage_summary}"
+        return line
+
+    return None
+
+
+def format_failure_status(label, elapsed_seconds):
+    if is_debug_mode() or is_verbose_output():
+        return f"[FAILED] {label} after {elapsed_seconds:.2f}s"
+    return f"failed in {elapsed_seconds:.1f}s"
 
 def reset_stop_signal():
     ACTIVE_REQUEST_STOP.clear()
@@ -32,28 +157,48 @@ def request_stop():
 
 def start_wait_counter(label):
     stop_event = threading.Event()
+    state = {"seconds": 0}
 
     def run():
-        seconds = 0
         while True:
             if stop_event.wait(1):
                 break
             if ACTIVE_REQUEST_STOP.is_set():
                 break
-            seconds += 1
-            if is_verbose():
-                print(f"[{label} WAIT] {seconds}s")
+            state["seconds"] += 1
+            if is_verbose_output():
+                shared_log(f"{label} WAIT {state['seconds']}s")
             else:
-                sys.stdout.write("\r" + "waiting" + "." * seconds)
+                sys.stdout.write("\r" + "waiting" + "." * state["seconds"])
                 sys.stdout.flush()
 
-        if not is_verbose() and seconds > 0:
-            sys.stdout.write("\r" + " " * (7 + seconds) + "\r\n")
-            sys.stdout.flush()
-
-    thread = threading.Thread(target=run, daemon=True)
+    thread = threading.Thread(target=run)
     thread.start()
-    return stop_event
+
+    def stop(final_message=None):
+        stop_event.set()
+        thread.join()
+
+        if is_verbose_output():
+            if final_message:
+                shared_log(final_message)
+            return
+
+        if state["seconds"] > 0:
+            if final_message:
+                sys.stdout.write("\r" + final_message + "\n")
+            else:
+                sys.stdout.write("\r" + " " * (7 + state["seconds"]) + "\r")
+            sys.stdout.flush()
+        elif final_message:
+            shared_log(final_message)
+
+        if final_message:
+            for handle in LOG_HANDLES:
+                handle.write(final_message + "\n")
+                handle.flush()
+
+    return stop
 
 def run_with_hard_timeout(func, label):
     result = {"value": None, "error": None}
@@ -70,23 +215,32 @@ def run_with_hard_timeout(func, label):
     thread = threading.Thread(target=run, daemon=True)
     thread.start()
 
-    wait_counter = start_wait_counter(label)
+    stop_wait_counter = start_wait_counter(label)
     deadline = time.monotonic() + LLM_TIMEOUT_SECONDS
+    started_at = time.monotonic()
 
-    while not done.wait(0.1):
-        if ACTIVE_REQUEST_STOP.is_set():
-            wait_counter.set()
-            raise TimeoutError("Cancelled by user.")
-        if time.monotonic() >= deadline:
-            wait_counter.set()
-            raise TimeoutError(f"Operation exceeded {LLM_TIMEOUT_SECONDS:.1f}s.")
+    try:
+        while not done.wait(0.1):
+            if ACTIVE_REQUEST_STOP.is_set():
+                raise TimeoutError("Cancelled by user.")
+            if time.monotonic() >= deadline:
+                raise TimeoutError(f"Operation exceeded {LLM_TIMEOUT_SECONDS:.1f}s.")
 
-    wait_counter.set()
+        if result["error"] is not None:
+            raise result["error"]
 
-    if result["error"] is not None:
-        raise result["error"]
-
-    return result["value"]
+        elapsed_seconds = time.monotonic() - started_at
+        completion_status = format_completion_status(label, elapsed_seconds, result["value"])
+        return result["value"]
+    except Exception:
+        completion_status = format_failure_status(label, time.monotonic() - started_at)
+        if is_debug_mode():
+            log_debug(f"[TIMER] {label} failed after {time.monotonic() - started_at:.2f}s")
+        raise
+    finally:
+        stop_wait_counter(locals().get("completion_status"))
+        if done.is_set():
+            thread.join()
 
 load_dotenv()
 
@@ -127,8 +281,11 @@ def run_self_test():
 
     def record(name, ok, detail):
         status = "PASS" if ok else "FAIL"
-        line = f"[SELF-TEST] {name}: {status} - {detail}"
-        print(line)
+        line = f"[{status}] {name}: {detail}"
+        if is_debug_mode():
+            log_debug(line)
+        else:
+            shared_log(line)
 
     record("API key present", bool(api_key), str(bool(api_key)))
 
@@ -220,7 +377,7 @@ Return exactly one JSON object and nothing else.
 Do not include markdown.
 Do not include any text before or after the JSON.
 
-Be concise by default. Expand only if the problem requires explanation.
+Respond as concisely as possible. Prefer one short sentence unless more detail is necessary.
 """
 def safe_correct_text(text):
     words = text.split()
@@ -245,8 +402,8 @@ def safe_correct_text(text):
 def run_agent(user_input):
     reset_stop_signal()
     corrected_input = safe_correct_text(user_input)
-    if is_verbose():
-        print(f"[CORRECTED INPUT] {corrected_input}")
+    if corrected_input != user_input:
+        log_debug(f"[CORRECTED INPUT] {corrected_input}")
     user_input = corrected_input
 
     # Short-circuit obvious math requests before asking the model to choose a tool.
@@ -255,27 +412,24 @@ def run_agent(user_input):
         calc_result = calculator_tool(expr)
 
         if not str(calc_result).startswith("Error in calculation"):
-            if is_verbose():
-                print(f"[CALCULATOR] {user_input} -> {expr} -> {calc_result}")
+            log_debug(f"[CALCULATOR] {user_input} -> {expr} -> {calc_result}")
             return calc_result
         else:
-            if is_verbose():
-                print(f"[CALCULATOR FAILED] {user_input} -> {expr} -> {calc_result}")
+            log_debug(f"[CALCULATOR FAILED] {user_input} -> {expr}")
 
-            if is_debug():
+            if is_local_connection():
                 return calc_result
 
             try:
-                if is_verbose():
-                    print(f"[LLM FALLBACK] Calculator failed, calling model (timeout={LLM_TIMEOUT_SECONDS}s)")
+                log_debug(f"{llm_status_label()} (timeout={LLM_TIMEOUT_SECONDS}s)")
                 # If parsing/evaluation fails, fall back to a direct model answer instead of routing through tools.
                 response = run_with_hard_timeout(
                     lambda: create_response(
-                        "gpt-5-nano",
+                        LLM_MODEL,
                         [
                             {
                                 "role": "system",
-                                "content": "The user's input may be an unusual or poorly phrased math question. Try to answer it directly if possible. If the intent is unclear, say so briefly."
+                                "content": "The user's input may be unusual or poorly phrased. Answer as directly as possible in one short sentence. If the intent is unclear, say so briefly."
                             },
                             {
                                 "role": "user",
@@ -283,45 +437,37 @@ def run_agent(user_input):
                             },
                         ],
                     ),
-                    "LLM FALLBACK",
+                    llm_status_label(),
                 )
-                if is_verbose():
-                    print("[LLM FALLBACK DONE] Model returned a fallback answer")
                 return extract_output_text(response)
             except Exception as e:
-                if is_verbose():
-                    print(f"[LLM FALLBACK ERROR TYPE] {type(e).__name__}")
-                    print(f"[LLM FALLBACK ERROR] {e}")
+                log_debug(f"[LLM FALLBACK ERROR TYPE] {type(e).__name__}")
+                log_debug(f"[LLM FALLBACK ERROR] {e}")
                 return f"OpenAI API error during math fallback: {type(e).__name__}: {e}"
 
-    if is_verbose():
-        print(f"[LLM] {user_input}")
+    log_debug(f"[LLM] {user_input}")
 
-    if is_debug():
-        return "DEBUG MODE: LLM call skipped"
+    if is_local_connection():
+        return "LLM call skipped: local connection mode"
 
     try:
-        if is_verbose():
-            print(f"[LLM ROUTER] Calling model to choose tool (timeout={LLM_TIMEOUT_SECONDS}s)")
+        log_debug(f"{llm_status_label()} (timeout={LLM_TIMEOUT_SECONDS}s)")
         response = run_with_hard_timeout(
             lambda: create_response(
-                "gpt-5-nano",
+                LLM_MODEL,
                 [
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": user_input},
                 ],
             ),
-            "LLM ROUTER",
+            llm_status_label(),
         )
 
         reply_text = extract_output_text(response)
-        if is_verbose():
-            print("[LLM ROUTER DONE] Model returned routing decision")
-            print(f"[ROUTER RAW] {reply_text}")
+        log_debug(f"[ROUTER RAW] {reply_text}")
     except Exception as e:
-        if is_verbose():
-            print(f"[LLM ROUTER ERROR TYPE] {type(e).__name__}")
-            print(f"[LLM ROUTER ERROR] {e}")
+        log_debug(f"[LLM ROUTER ERROR TYPE] {type(e).__name__}")
+        log_debug(f"[LLM ROUTER ERROR] {e}")
         return f"OpenAI API error during tool routing: {type(e).__name__}: {e}"
 
     try:
@@ -333,20 +479,18 @@ def run_agent(user_input):
     tool_input = decision.get("input", "")
 
     if tool_name in TOOLS:
-        if is_verbose():
-            print(f"[SEARCH] {tool_input}")
+        log_debug(f"[SEARCH] {tool_input}")
         tool_result = TOOLS[tool_name](tool_input)
 
         # Turn raw tool output into a user-facing answer in a second model pass.
-        if is_verbose():
-            print(f"[LLM SYNTHESIS] Calling model to format tool output (timeout={LLM_TIMEOUT_SECONDS}s)")
+        log_debug(f"{llm_status_label()} (timeout={LLM_TIMEOUT_SECONDS}s)")
         response = run_with_hard_timeout(
             lambda: create_response(
-                "gpt-5-nano",
+                LLM_MODEL,
                 [
                     {
                         "role": "system",
-                        "content": "Use the tool result as your primary source. If it is incomplete or unhelpful, you may supplement with general knowledge, but clearly indicate uncertainty."
+                        "content": "Use the tool result as your primary source and answer in one short sentence when possible. If needed, briefly indicate uncertainty."
                     },
                     {
                         "role": "user",
@@ -354,10 +498,8 @@ def run_agent(user_input):
                     },
                 ],
             ),
-            "LLM SYNTHESIS",
+            llm_status_label(),
         )
-        if is_verbose():
-            print("[LLM SYNTHESIS DONE] Final answer generated")
 
         return extract_output_text(response)
 
