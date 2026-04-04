@@ -47,8 +47,8 @@ def calculator_tool(expression):
         node = ast.parse(expression, mode="eval").body
         result = _evaluate(node)
         return format_result(result)
-    except Exception:
-        return "Error in calculation"
+    except Exception as e:
+        return f"Error in calculation: {e}"
 
 def format_result(result):
     if isinstance(result, float) and result.is_integer():

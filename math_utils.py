@@ -1,4 +1,3 @@
-from email.mime import text
 import re
 from word2number import w2n
 
@@ -46,7 +45,7 @@ def should_force_calculator(user_input):
     if any(len(num) >= 4 for num in numbers):
         return True
 
-    if len(re.findall(r"[\+\-\*/]", text)) >= 1 and len(numbers) >= 2:
+    if re.search(r"[\+\-\*/]", text):
         return True
 
     number_words_present = any(
@@ -55,8 +54,9 @@ def should_force_calculator(user_input):
     math_words_present = any(
         phrase in text for phrase in OPERATION_REPLACEMENTS
     )
+    math_symbols_present = bool(re.search(r"[\+\-\*/]", text))
 
-    if number_words_present and math_words_present:
+    if number_words_present and (math_words_present or math_symbols_present):
         return True
 
     return False
@@ -92,7 +92,9 @@ def convert_number_phrases(text):
 
 def extract_math_expression(user_input):
     text = user_input.lower().strip()
-    text = text.replace("-", " ")
+    # only replace hyphens inside words (e.g., twenty-two → twenty two)
+    text = re.sub(r"(?<=[a-zA-Z])-(?=[a-zA-Z])", " ", text)
+    text = re.sub(r"(?<=[a-zA-Z0-9])-(?=[0-9])|(?<=[0-9])-(?=[a-zA-Z])|(?<=[0-9])-(?=[0-9])", " - ", text)
 
     prefixes = ["what is", "calculate", "solve"]
     for prefix in prefixes:

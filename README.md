@@ -1,74 +1,185 @@
 # Hybrid AI Agent
 
-A lightweight Python agent that routes user input between deterministic math execution, LLM fallback, and tool-based search.
+A lightweight Python agent that routes user input between deterministic computation, language model reasoning, and external tools.
 
-## What it does
+---
 
-This project combines rule-based logic with an LLM to handle different kinds of user input through different paths:
+## Overview
 
-- Calculator path for supported math queries  
-- LLM fallback for unusual or poorly phrased math  
-- Search tool path for factual or definition-style questions  
-- Direct LLM response for casual conversation  
+This project implements a hybrid agent architecture that avoids sending every query directly to an LLM. Instead, it combines rule-based logic with model-based reasoning to choose the most appropriate execution path.
 
-## Why this project exists
+The system prioritizes:
 
-The goal was to build a small but real agent system rather than a simple chatbot.
+* **Deterministic computation** for math
+* **Tool usage** for external data
+* **LLM reasoning** for interpretation and fallback
 
-Instead of sending every query directly to the language model, the program first decides whether the request can be handled more reliably with deterministic logic.
+---
+
+## Features
+
+* **Calculator-first execution**
+
+  * Evaluates math locally using a safe AST parser
+  * Supports natural language math (e.g. `twenty-two plus five`)
+
+* **Spell correction preprocessing**
+
+  * Fixes minor typos before routing
+  * Preserves numbers and operators
+
+* **Hybrid routing**
+
+  * LLM decides between:
+
+    * direct response
+    * tool usage (search)
+
+* **Search integration**
+
+  * Uses DuckDuckGo for external queries
+
+* **Execution modes**
+
+  * `normal` — clean output
+  * `verbose` — shows internal steps
+  * `debug` — disables LLM calls (for testing)
+
+* **Error handling**
+
+  * Graceful API fallback
+  * Transparent calculator errors in debug mode
+
+---
 
 ## Architecture
 
-1. Calculator (deterministic)
-   - Detects math-like input
-   - Parses natural-language math phrases
-   - Evaluates safely using Python AST
+```
+User Input
+    ↓
+Spell Correction
+    ↓
+Routing Logic
+    ├── Calculator (deterministic)
+    │       ├── success → return result
+    │       └── failure → LLM fallback
+    │
+    └── LLM Router
+            ├── search_tool → tool → LLM synthesis
+            └── none → direct response
+```
 
-2. Calculator → LLM fallback
-   - If parsing fails, falls back to LLM
+---
 
-3. LLM → Search Tool
-   - LLM chooses search for factual queries
+## Example Usage
 
-4. Direct LLM Response
-   - Handles casual input
+### Math
 
-## Example execution paths
+```
+>> twenty-two plus five
+27
+```
 
-Calculator success:
-[CALCULATOR] what is five times 7 -> 5 * 7 -> 35
+### Definition
 
-Calculator failed → LLM:
-[CALCULATOR FAILED → LLM] what is plus of five and three -> + of 5 and 3
+```
+>> what is FastAPI
+FastAPI is a modern...
+```
 
-LLM route to search:
-[LLM] what is israel
-[SEARCH] israel
+### External query
 
-Direct LLM response:
-[LLM] hello
+```
+>> news today
+[uses search + LLM synthesis]
+```
 
-## Project structure
+### Debug mode
 
-- main.py
-- agent.py
-- tools.py
-- math_utils.py
+```
+>> 2++
+Error in calculation: invalid syntax
+```
 
-## Tech used
+---
 
-- Python
-- OpenAI API
-- python-dotenv
-- requests
-- word2number
+## Modes
+
+Set in `agent.py`:
+
+```
+MODE = "normal"    # clean output
+MODE = "verbose"   # show internal steps
+MODE = "debug"     # no LLM calls
+```
+
+---
+
+## Project Structure
+
+```
+main.py         # CLI entry point
+agent.py        # routing + orchestration
+math_utils.py   # parsing + detection
+tools.py        # calculator + search
+```
+
+---
+
+## Tech Stack
+
+* Python
+* OpenAI API
+* DuckDuckGo (requests)
+* word2number
+* pyspellchecker
+* python-dotenv
+
+---
 
 ## Setup
 
-1. Create virtual environment
-2. Install dependencies: pip install -r requirements.txt
-3. Add .env file with OPENAI_API_KEY
+1. Create a virtual environment
+2. Install dependencies:
+
+   ```
+   pip install -r requirements.txt
+   ```
+3. Create a `.env` file:
+
+   ```
+   OPENAI_API_KEY=your_key_here
+   ```
+
+---
 
 ## Run
 
+```
 py main.py
+```
+
+---
+
+## Design Goals
+
+* Use deterministic logic where possible
+* Use LLMs for reasoning, not everything
+* Keep components modular and inspectable
+* Make behavior debuggable via execution modes
+
+---
+
+## Future Improvements
+
+* Better search provider (Brave, Tavily)
+* Multi-step tool chaining
+* Conversation memory
+* Expanded math support (functions, units)
+* Structured output enforcement
+
+---
+
+## License
+
+MIT
