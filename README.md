@@ -40,8 +40,10 @@ The system prioritizes:
 
   * `--mode normal` defaults to friendly output with API-backed LLM calls
   * `--mode debug` defaults to verbose output with local-only behavior
+  * `--provider` selects the LLM backend strategy: `openai`, `ollama`, or `auto`
   * `--output verbose` enables internal status logging without changing mode
   * `--connection local` skips LLM calls without changing mode
+  * `--provider auto` tries Ollama first and uses OpenAI only when hosted calls are permitted and fallback is necessary
 
 * **Interactive CLI controls**
 
@@ -117,6 +119,7 @@ Selected from the command line:
 ```text
 py main.py --mode normal
 py main.py --mode debug
+py main.py --provider openai
 py main.py --mode normal --output verbose
 py main.py --mode normal --connection local
 ```
@@ -125,6 +128,7 @@ Default resolution:
 
 * `--mode normal` -> `--output friendly` + `--connection api`
 * `--mode debug` -> `--output verbose` + `--connection local`
+* `--provider openai` is the current default until Ollama transport lands
 
 You can override `--output` or `--connection` explicitly when you want a mixed configuration.
 

@@ -37,3 +37,9 @@ Use this file for dated summaries of meaningful work completed during a session.
 - Identified the LLM transport/provider layer as the smallest worthwhile future extraction.
 - Chose the next short-term direction: add local Ollama support with a small provider refactor and local-first fallback to OpenAI on a separate branch.
 - Extracted the current OpenAI transport and response parsing into `llm_client.py` as the first small provider-layer refactor.
+- Added a provider-facing `generate_text(...)` boundary and threaded `provider` through CLI/runtime while keeping behavior OpenAI-backed for now.
+- Added Ollama transport to `llm_client.py`.
+- Implemented explicit provider behavior: `openai`, `ollama`, and `auto` with local-first fallback on transport, timeout, availability, or empty-output failure only.
+- Added provider-result metadata and verbose logging so fallback behavior is visible during debugging.
+- Expanded smoke coverage for OpenAI-only, Ollama-when-available, and `auto` provider behavior.
+- Reduced OpenAI token usage with shorter prompts, low reasoning effort, compact JSON routing instructions, and lower output token caps.

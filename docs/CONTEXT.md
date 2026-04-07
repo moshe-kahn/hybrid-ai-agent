@@ -63,6 +63,13 @@ Keep entries brief and practical. Prefer current state over a long historical lo
 - Self-test output now uses `[PASS]`/`[FAIL]` prefixes for readability and consistency with the smoke test.
 - Friendly-mode wait cleanup now clears the inline wait indicator without leaving an extra blank line after successful LLM calls.
 - Extracted OpenAI transport and response parsing into `llm_client.py` while keeping `agent.py` focused on orchestration.
+- Added a public `generate_text(...)` boundary in `llm_client.py` and threaded a separate `provider` setting through the CLI/runtime without changing current OpenAI-backed behavior.
+- Added Ollama transport inside `llm_client.py` with explicit `openai`, `ollama`, and `auto` provider behavior.
+- Implemented `auto` as local-first with OpenAI fallback only on transport, timeout, provider-unavailable, or empty-output failure.
+- Added normalized provider results that include `text`, `provider`, `model`, and `fallback_used`, plus fallback metadata for debugging.
+- Added verbose provider-result logging so it is visible which provider was attempted first, why fallback happened, and which provider answered.
+- Expanded smoke coverage for OpenAI-only, Ollama-when-available, and `auto` provider behavior.
+- Tightened OpenAI prompt construction to reduce token usage with shorter stable system prompts, lower output caps, low reasoning effort, and compact JSON routing output.
 
 ## Recent User Requests
 
@@ -79,6 +86,7 @@ Keep entries brief and practical. Prefer current state over a long historical lo
 - Plan a small LLM-provider refactor so a local Ollama model can be tried first and OpenAI can remain the fallback.
 - Use a branch for that provider refactor rather than changing the current checkpoint in place.
 - Separate the LLM request layer from `agent.py` as the first small step toward multi-provider support.
+- Add Ollama transport and explicit local-first fallback behavior while keeping `connection` and `provider` separate.
 
 ## Current Short-Term Goal
 
@@ -88,7 +96,7 @@ Keep entries brief and practical. Prefer current state over a long historical lo
 - Keep friendly output compact and clean.
 - Make future sessions easier by keeping docs aligned with the code.
 - Keep the new `llm_client.py` boundary stable and easy to reason about.
-- Add Ollama as a local LLM option with a practical local-first, OpenAI-fallback path.
+- Re-test the new Ollama and `auto` provider behavior in a real local environment.
 - Avoid a broad redesign; keep the refactor small and centered on provider logic.
 
 ## Known Issues And Things To Verify
@@ -98,7 +106,8 @@ Keep entries brief and practical. Prefer current state over a long historical lo
 - The waiting indicator and threaded timeout flow should be re-tested after any future refactor touching CLI control flow.
 - `--self-test` currently checks many layers and prints results directly; if the output format changes later, keep it readable in both friendly and verbose usage.
 - Runtime behavior now depends on the interaction between `mode`, `output`, and `connection`; CLI resolution changes should be re-tested carefully.
-- `agent.py` is still the highest-pressure file; the next worthwhile extraction is the LLM transport/provider layer, not a broad project restructure.
+- `agent.py` is still the highest-pressure file, but provider transport is now separated into `llm_client.py`.
+- Ollama availability and local-first fallback behavior should be re-tested outside the sandbox because local model availability is environment-specific.
 
 ## What We Believe Is True Right Now
 
@@ -107,12 +116,13 @@ Keep entries brief and practical. Prefer current state over a long historical lo
 - The current direct `httpx` implementation is the preferred request path for this repo.
 - The latest uncommitted checkpoint adds the runtime config split, shared logging, and doc updates around that work.
 - The smallest justified refactor was to separate provider transport from orchestration so multiple LLM backends can be supported cleanly.
+- The provider layer now supports OpenAI, Ollama, and explicit `auto` fallback rules while keeping `connection` separate from `provider`.
 
 ## Suggested Next Steps
 
 - Re-run a quick README sanity check in the editor after the rewrite.
 - Re-run the smoke test and a couple of manual CLI combinations after the latest runtime-config changes.
 - Decide whether to commit the current checkpoint.
-- After that checkpoint is committed, create a branch for the Ollama provider refactor.
-- In that branch, build on `llm_client.py` by adding Ollama and local-first fallback behavior.
+- Re-run provider-specific manual checks for `--provider openai`, `--provider ollama`, and `--provider auto`.
+- If provider behavior looks stable, commit this branch checkpoint before any further cleanup.
 - If future work expands the agent, keep `docs/CONTEXT.md`, `docs/ROADMAP.md`, and `README.md` aligned.

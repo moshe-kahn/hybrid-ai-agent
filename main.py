@@ -23,6 +23,11 @@ def main():
         choices=["api", "local"],
     )
     parser.add_argument(
+        "--provider",
+        choices=["openai", "ollama", "auto"],
+        default="openai",
+    )
+    parser.add_argument(
         "--self-test",
         action="store_true",
         help="Run a small OpenAI API connectivity test and exit.",
@@ -55,6 +60,7 @@ def main():
         mode=args.mode,
         output=resolved_output,
         connection=resolved_connection,
+        provider=args.provider,
         log_paths=log_paths,
     )
 

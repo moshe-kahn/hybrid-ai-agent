@@ -10,9 +10,8 @@ from math_utils import should_force_calculator, extract_math_expression
 from llm_client import (
     LLM_MODEL,
     api_key,
-    create_response,
     default_headers,
-    extract_output_text,
+    generate_text,
     http_client,
 )
 
@@ -21,16 +20,18 @@ from spellchecker import SpellChecker
 MODE = "normal"
 OUTPUT = "friendly"
 CONNECTION = "api"
+PROVIDER = "openai"
 LLM_TIMEOUT_SECONDS = 20.0
 ACTIVE_REQUEST_STOP = threading.Event()
 LOG_HANDLES = []
 
-def configure_runtime(mode, output, connection, log_paths):
-    global MODE, OUTPUT, CONNECTION
+def configure_runtime(mode, output, connection, provider, log_paths):
+    global MODE, OUTPUT, CONNECTION, PROVIDER
 
     MODE = mode
     OUTPUT = output
     CONNECTION = connection
+    PROVIDER = provider
 
     close_runtime()
     for path in log_paths:
@@ -80,13 +81,38 @@ def is_local_connection():
     return CONNECTION == "local"
 
 
+def get_provider():
+    return PROVIDER
+
+
+def get_provider_model():
+    if get_provider() == "openai":
+        return LLM_MODEL
+    return None
+
+
 def log_debug(message):
     if is_verbose_output():
         shared_log(message)
 
 
+def log_llm_result(result):
+    if not is_verbose_output() or not isinstance(result, dict):
+        return
+
+    provider = result.get("provider", "unknown")
+    model = result.get("model", "unknown")
+    attempted_provider = result.get("attempted_provider", provider)
+    fallback_used = bool(result.get("fallback_used"))
+    fallback_reason = result.get("fallback_reason")
+
+    shared_log(f"[LLM RESULT] attempted={attempted_provider} answered={provider} model={model}")
+    if fallback_used:
+        shared_log(f"[LLM FALLBACK] {attempted_provider} -> {provider} | reason: {fallback_reason}")
+
+
 def llm_status_label():
-    return f"[LLM:{LLM_MODEL}]"
+    return f"[LLM:{get_provider()}]"
 
 def format_usage_summary(response_data):
     usage = response_data.get("usage")
@@ -310,8 +336,19 @@ def run_self_test():
         record("Raw responses endpoint", False, f"{type(e).__name__}: {e}")
 
     try:
-        response = run_with_hard_timeout(lambda: create_response("gpt-5-nano", "Reply with exactly: ok"), "SELF-TEST")
-        record("Direct response parsing", True, extract_output_text(response))
+        result = run_with_hard_timeout(
+            lambda: generate_text(
+                "Reply with exactly: ok",
+                provider=get_provider(),
+                connection=CONNECTION,
+                model="gpt-5-nano",
+                max_output_tokens=8,
+                reasoning_effort="low",
+            ),
+            "SELF-TEST",
+        )
+        log_llm_result(result)
+        record("Direct response parsing", True, result["text"])
     except Exception as e:
         record("Direct response parsing", False, f"{type(e).__name__}: {e}")
 
@@ -321,34 +358,17 @@ TOOLS = {
     "search_tool": search_tool,
 }
 
-SYSTEM_PROMPT = """
-You are a tool-using assistant.
-
-Rules:
-- Use search_tool when:
-- the question is about current events, recent data, or real-time information
-- you are unsure of the answer
-- the query clearly requires external lookup
-
-- For simple definitions or well-known concepts, you may answer directly with tool = "none"
-
-IMPORTANT:
-- When tool = "none", the "input" field MUST contain your actual response to the user
-- Never return "input": "none"
-
-Available tools:
-1. search_tool(query)
-
-Valid formats:
-{"tool": "search_tool", "input": "fastapi"}
-{"tool": "none", "input": "Hello! How can I help you?"}
-
-Return exactly one JSON object and nothing else.
-Do not include markdown.
-Do not include any text before or after the JSON.
-
-Respond as concisely as possible. Prefer one short sentence unless more detail is necessary.
-"""
+ROUTER_SYSTEM_PROMPT = (
+    'Return one compact single-line JSON object only. '
+    'Use {"tool":"search_tool","input":"..."} for current, uncertain, or external-lookup queries; '
+    'otherwise use {"tool":"none","input":"..."} with the shortest correct answer.'
+)
+DIRECT_ANSWER_SYSTEM_PROMPT = (
+    "Answer directly. Respond in the shortest correct answer. If unclear, say so briefly."
+)
+SYNTHESIS_SYSTEM_PROMPT = (
+    "Use the tool result as primary source. Respond in the shortest correct answer. Briefly note uncertainty only if needed."
+)
 def safe_correct_text(text):
     words = text.split()
     corrected = []
@@ -394,22 +414,27 @@ def run_agent(user_input):
                 log_debug(f"{llm_status_label()} (timeout={LLM_TIMEOUT_SECONDS}s)")
                 # If parsing/evaluation fails, fall back to a direct model answer instead of routing through tools.
                 response = run_with_hard_timeout(
-                    lambda: create_response(
-                        LLM_MODEL,
+                    lambda: generate_text(
                         [
                             {
                                 "role": "system",
-                                "content": "The user's input may be unusual or poorly phrased. Answer as directly as possible in one short sentence. If the intent is unclear, say so briefly."
+                                "content": DIRECT_ANSWER_SYSTEM_PROMPT
                             },
                             {
                                 "role": "user",
                                 "content": user_input
                             },
                         ],
+                        provider=get_provider(),
+                        connection=CONNECTION,
+                        model=get_provider_model(),
+                        max_output_tokens=48,
+                        reasoning_effort="low",
                     ),
                     llm_status_label(),
                 )
-                return extract_output_text(response)
+                log_llm_result(response)
+                return response["text"]
             except Exception as e:
                 log_debug(f"[LLM FALLBACK ERROR TYPE] {type(e).__name__}")
                 log_debug(f"[LLM FALLBACK ERROR] {e}")
@@ -423,17 +448,23 @@ def run_agent(user_input):
     try:
         log_debug(f"{llm_status_label()} (timeout={LLM_TIMEOUT_SECONDS}s)")
         response = run_with_hard_timeout(
-            lambda: create_response(
-                LLM_MODEL,
+            lambda: generate_text(
                 [
-                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "system", "content": ROUTER_SYSTEM_PROMPT},
                     {"role": "user", "content": user_input},
                 ],
+                provider=get_provider(),
+                connection=CONNECTION,
+                model=get_provider_model(),
+                max_output_tokens=48,
+                reasoning_effort="low",
+                stop_sequences=["\n"],
             ),
             llm_status_label(),
         )
 
-        reply_text = extract_output_text(response)
+        log_llm_result(response)
+        reply_text = response["text"]
         log_debug(f"[ROUTER RAW] {reply_text}")
     except Exception as e:
         log_debug(f"[LLM ROUTER ERROR TYPE] {type(e).__name__}")
@@ -455,23 +486,28 @@ def run_agent(user_input):
         # Turn raw tool output into a user-facing answer in a second model pass.
         log_debug(f"{llm_status_label()} (timeout={LLM_TIMEOUT_SECONDS}s)")
         response = run_with_hard_timeout(
-            lambda: create_response(
-                LLM_MODEL,
+            lambda: generate_text(
                 [
                     {
                         "role": "system",
-                        "content": "Use the tool result as your primary source and answer in one short sentence when possible. If needed, briefly indicate uncertainty."
+                        "content": SYNTHESIS_SYSTEM_PROMPT
                     },
                     {
                         "role": "user",
-                        "content": f"User asked: {user_input}\nTool returned: {tool_result}"
+                        "content": f"Q:{user_input}\nR:{tool_result}"
                     },
                 ],
+                provider=get_provider(),
+                connection=CONNECTION,
+                model=get_provider_model(),
+                max_output_tokens=64,
+                reasoning_effort="low",
             ),
             llm_status_label(),
         )
 
-        return extract_output_text(response)
+        log_llm_result(response)
+        return response["text"]
 
     if tool_name == "none":
         if tool_input.strip().lower() == "none":

@@ -99,6 +99,7 @@ Controlled via:
 MODE = "normal" | "debug"
 OUTPUT = "friendly" | "verbose"
 CONNECTION = "api" | "local"
+PROVIDER = "openai" | "ollama" | "auto"
 ```
 
 Normal mode defaults:
@@ -128,6 +129,12 @@ Connection layer:
 
 * `api` allows direct `httpx` calls to `/v1/responses`
 * `local` skips LLM calls and returns local-mode messages or errors instead
+
+Provider layer:
+
+* `openai` selects the hosted OpenAI backend
+* `ollama` selects the local Ollama backend
+* `auto` tries Ollama first and falls back to OpenAI only on transport, timeout, availability, or empty-output failure when hosted calls are allowed
 
 ---
 
