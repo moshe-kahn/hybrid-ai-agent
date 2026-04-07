@@ -7,6 +7,7 @@ This file tracks active bugs, quirks, and things that should be re-verified afte
 - Request stop is a soft local cancel. It stops waiting in the CLI, but it does not guarantee the in-flight HTTP request is fully aborted server-side.
 - The CLI control flow now depends on background threads and timed waits. Any future refactor touching request execution, waiting output, or quit behavior should re-test those paths carefully.
 - Runtime behavior now depends on the interaction between `mode`, `output`, and `connection`; CLI resolution changes should be re-tested carefully.
+- `agent.py` currently holds most provider, timeout, wait-status, and orchestration logic; keep future refactors narrow so stability does not regress.
 
 ## Re-Test After Relevant Changes
 
@@ -26,6 +27,7 @@ This file tracks active bugs, quirks, and things that should be re-verified afte
 - `s` should stop a running request and return to the prompt
 - `q` during a running request should quit the program
 - `q`, `quit`, and `exit` at the prompt should quit cleanly
+- After adding Ollama later, test local-only, OpenAI-only, and local-first fallback behavior separately
 
 ## Resolved Recently
 

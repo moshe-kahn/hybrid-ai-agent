@@ -135,6 +135,7 @@ You can override `--output` or `--connection` explicitly when you want a mixed c
 ```text
 main.py         # CLI entry point
 agent.py        # routing + orchestration
+llm_client.py   # LLM transport + response parsing
 math_utils.py   # parsing + detection
 tools.py        # calculator + search
 scripts/        # smoke tests

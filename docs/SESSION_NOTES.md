@@ -33,3 +33,7 @@ Use this file for dated summaries of meaningful work completed during a session.
 - Synced the docs with the current CLI behavior, runtime config split, and logging support.
 - Changed self-test output to use `[PASS]`/`[FAIL]` prefixes instead of `[SELF-TEST] ... PASS/FAIL`.
 - Removed the extra blank line left behind by friendly-mode wait cleanup after successful LLM calls.
+- Reviewed the current project structure and decided against a broad refactor for now.
+- Identified the LLM transport/provider layer as the smallest worthwhile future extraction.
+- Chose the next short-term direction: add local Ollama support with a small provider refactor and local-first fallback to OpenAI on a separate branch.
+- Extracted the current OpenAI transport and response parsing into `llm_client.py` as the first small provider-layer refactor.

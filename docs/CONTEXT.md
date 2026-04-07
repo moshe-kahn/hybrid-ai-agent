@@ -62,6 +62,7 @@ Keep entries brief and practical. Prefer current state over a long historical lo
 - Synced the docs with the current CLI structure and logging behavior.
 - Self-test output now uses `[PASS]`/`[FAIL]` prefixes for readability and consistency with the smoke test.
 - Friendly-mode wait cleanup now clears the inline wait indicator without leaving an extra blank line after successful LLM calls.
+- Extracted OpenAI transport and response parsing into `llm_client.py` while keeping `agent.py` focused on orchestration.
 
 ## Recent User Requests
 
@@ -74,6 +75,10 @@ Keep entries brief and practical. Prefer current state over a long historical lo
 - Update the README with the new workflow.
 - Add this context file for future major updates.
 - Reconstruct the latest checkpoint from repo docs and git state.
+- Assess whether the current file structure should stay as-is or take a small refactor.
+- Plan a small LLM-provider refactor so a local Ollama model can be tried first and OpenAI can remain the fallback.
+- Use a branch for that provider refactor rather than changing the current checkpoint in place.
+- Separate the LLM request layer from `agent.py` as the first small step toward multi-provider support.
 
 ## Current Short-Term Goal
 
@@ -82,6 +87,9 @@ Keep entries brief and practical. Prefer current state over a long historical lo
 - Keep the runtime config model easy to reason about and re-test.
 - Keep friendly output compact and clean.
 - Make future sessions easier by keeping docs aligned with the code.
+- Keep the new `llm_client.py` boundary stable and easy to reason about.
+- Add Ollama as a local LLM option with a practical local-first, OpenAI-fallback path.
+- Avoid a broad redesign; keep the refactor small and centered on provider logic.
 
 ## Known Issues And Things To Verify
 
@@ -90,6 +98,7 @@ Keep entries brief and practical. Prefer current state over a long historical lo
 - The waiting indicator and threaded timeout flow should be re-tested after any future refactor touching CLI control flow.
 - `--self-test` currently checks many layers and prints results directly; if the output format changes later, keep it readable in both friendly and verbose usage.
 - Runtime behavior now depends on the interaction between `mode`, `output`, and `connection`; CLI resolution changes should be re-tested carefully.
+- `agent.py` is still the highest-pressure file; the next worthwhile extraction is the LLM transport/provider layer, not a broad project restructure.
 
 ## What We Believe Is True Right Now
 
@@ -97,10 +106,13 @@ Keep entries brief and practical. Prefer current state over a long historical lo
 - The earlier hanging issue was isolated to the SDK-based response call path in this environment.
 - The current direct `httpx` implementation is the preferred request path for this repo.
 - The latest uncommitted checkpoint adds the runtime config split, shared logging, and doc updates around that work.
+- The smallest justified refactor was to separate provider transport from orchestration so multiple LLM backends can be supported cleanly.
 
 ## Suggested Next Steps
 
 - Re-run a quick README sanity check in the editor after the rewrite.
 - Re-run the smoke test and a couple of manual CLI combinations after the latest runtime-config changes.
 - Decide whether to commit the current checkpoint.
+- After that checkpoint is committed, create a branch for the Ollama provider refactor.
+- In that branch, build on `llm_client.py` by adding Ollama and local-first fallback behavior.
 - If future work expands the agent, keep `docs/CONTEXT.md`, `docs/ROADMAP.md`, and `README.md` aligned.

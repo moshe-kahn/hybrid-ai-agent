@@ -1,16 +1,20 @@
 import json
-import os
 import socket
 import sys
 import threading
 import time
 from pathlib import Path
 
-import httpx
-from dotenv import load_dotenv
-
 from tools import search_tool, calculator_tool
 from math_utils import should_force_calculator, extract_math_expression
+from llm_client import (
+    LLM_MODEL,
+    api_key,
+    create_response,
+    default_headers,
+    extract_output_text,
+    http_client,
+)
 
 from spellchecker import SpellChecker
 
@@ -18,7 +22,6 @@ MODE = "normal"
 OUTPUT = "friendly"
 CONNECTION = "api"
 LLM_TIMEOUT_SECONDS = 20.0
-LLM_MODEL = "gpt-5-nano"
 ACTIVE_REQUEST_STOP = threading.Event()
 LOG_HANDLES = []
 
@@ -242,40 +245,7 @@ def run_with_hard_timeout(func, label):
         if done.is_set():
             thread.join()
 
-load_dotenv()
-
 spell = SpellChecker()
-api_key = os.getenv("OPENAI_API_KEY")
-default_headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-
-http_client = httpx.Client(timeout=httpx.Timeout(LLM_TIMEOUT_SECONDS, connect=5.0))
-
-def create_response(model, input_data):
-    response = http_client.post(
-        "https://api.openai.com/v1/responses",
-        headers=default_headers,
-        json={"model": model, "input": input_data},
-    )
-    response.raise_for_status()
-    return response.json()
-
-def extract_output_text(response_json):
-    output_text = response_json.get("output_text")
-    if isinstance(output_text, str) and output_text.strip():
-        return output_text.strip()
-
-    chunks = []
-    for item in response_json.get("output", []):
-        if item.get("type") != "message":
-            continue
-        for content in item.get("content", []):
-            if content.get("type") == "output_text":
-                text = content.get("text", "")
-                if text:
-                    chunks.append(text)
-
-    return "".join(chunks).strip()
-
 def run_self_test():
     reset_stop_signal()
 

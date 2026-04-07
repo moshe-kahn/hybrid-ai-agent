@@ -81,6 +81,7 @@ Current tools:
 
 * `search_tool` (DuckDuckGo)
 * `calculator_tool` (local)
+* OpenAI transport and response parsing (`llm_client.py`)
 
 Pattern:
 
@@ -159,6 +160,7 @@ Connection layer:
 * JSON parsing for routing can fail
 * No confidence scoring or validation
 * Logging is lightweight and file-based rather than structured tracing
+* LLM provider logic is currently OpenAI-specific even though the transport code is now separated from orchestration
 
 ---
 
@@ -169,3 +171,4 @@ Connection layer:
 * Planner/executor split
 * Stateful sessions
 * Structured outputs for routing reliability
+* Small provider-layer extraction so OpenAI and Ollama can share one orchestration path
