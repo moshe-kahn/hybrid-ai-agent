@@ -70,6 +70,9 @@ Keep entries brief and practical. Prefer current state over a long historical lo
 - Added verbose provider-result logging so it is visible which provider was attempted first, why fallback happened, and which provider answered.
 - Expanded smoke coverage for OpenAI-only, Ollama-when-available, and `auto` provider behavior.
 - Tightened OpenAI prompt construction to reduce token usage with shorter stable system prompts, lower output caps, low reasoning effort, and compact JSON routing output.
+- Expanded `--self-test` with provider-aware generation checks for `openai`, `ollama`, and `auto`.
+- Relaxed aggressive output caps after GPT-5-nano self-tests showed that tiny visible answers can still require much larger total output-token budgets.
+- Reduced redundant OpenAI self-test calls and allowed `auto` self-test to report `SKIP` on fallback rate limits instead of a misleading hard failure.
 
 ## Recent User Requests
 

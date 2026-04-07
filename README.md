@@ -54,6 +54,8 @@ The system prioritizes:
 
   * Verifies API key presence, connectivity, model access, and response generation
   * Uses the same `[PASS]` / `[FAIL]` style as the smoke test
+  * Includes provider-aware generation checks for `openai`, `ollama`, and `auto`
+  * May report `[SKIP]` for `auto` when OpenAI fallback is rate-limited during the self-test itself
 
 * **Shared logging**
 

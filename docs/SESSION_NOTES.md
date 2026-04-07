@@ -43,3 +43,6 @@ Use this file for dated summaries of meaningful work completed during a session.
 - Added provider-result metadata and verbose logging so fallback behavior is visible during debugging.
 - Expanded smoke coverage for OpenAI-only, Ollama-when-available, and `auto` provider behavior.
 - Reduced OpenAI token usage with shorter prompts, low reasoning effort, compact JSON routing instructions, and lower output token caps.
+- Expanded `--self-test` so it also reports provider-specific generation checks for `openai`, `ollama`, and `auto`.
+- Removed overly aggressive OpenAI output caps from the main generation path and relaxed self-test limits after observing truncated incomplete responses.
+- Reduced redundant OpenAI self-test calls and treated `auto` rate-limit fallback as `SKIP` instead of `FAIL`.

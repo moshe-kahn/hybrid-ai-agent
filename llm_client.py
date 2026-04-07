@@ -16,7 +16,7 @@ default_headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
 http_client = httpx.Client(timeout=httpx.Timeout(LLM_TIMEOUT_SECONDS, connect=5.0))
 ollama_client = httpx.Client(
     base_url=OLLAMA_BASE_URL,
-    timeout=httpx.Timeout(LLM_TIMEOUT_SECONDS, connect=2.0),
+    timeout=httpx.Timeout(LLM_TIMEOUT_SECONDS, connect=5.0),
 )
 
 
@@ -36,19 +36,41 @@ class EmptyResponseError(LLMProviderError):
     pass
 
 
+def _format_response_body(response):
+    try:
+        data = response.json()
+    except ValueError:
+        text = response.text.strip()
+        return text or "<empty response body>"
+
+    if isinstance(data, dict):
+        error = data.get("error")
+        if isinstance(error, dict):
+            parts = []
+            for key in ("message", "type", "param", "code"):
+                value = error.get(key)
+                if value:
+                    parts.append(f"{key}={value}")
+            if parts:
+                return "; ".join(parts)
+
+    return str(data)
+
+
 def create_response(
     model,
     input_data,
     *,
-    max_output_tokens=80,
+    max_output_tokens=None,
     reasoning_effort="low",
     stop_sequences=None,
 ):
     payload = {
         "model": model,
         "input": input_data,
-        "max_output_tokens": max_output_tokens,
     }
+    if max_output_tokens is not None:
+        payload["max_output_tokens"] = max_output_tokens
     if reasoning_effort:
         payload["reasoning"] = {"effort": reasoning_effort}
     if stop_sequences:
@@ -59,6 +81,10 @@ def create_response(
         headers=default_headers,
         json=payload,
     )
+    if response.status_code == 400:
+        raise LLMProviderError(f"OpenAI 400 response: {_format_response_body(response)}")
+    if response.status_code == 429:
+        raise LLMProviderError(f"OpenAI 429 response: {_format_response_body(response)}")
     response.raise_for_status()
     return response.json()
 
@@ -110,7 +136,7 @@ def _generate_openai(
     input_data,
     *,
     model=None,
-    max_output_tokens=80,
+    max_output_tokens=None,
     reasoning_effort="low",
     stop_sequences=None,
 ):
@@ -125,7 +151,10 @@ def _generate_openai(
         reasoning_effort=reasoning_effort,
         stop_sequences=stop_sequences,
     )
-    text = _require_non_empty_text(extract_output_text(response), "OpenAI")
+    text = extract_output_text(response)
+    if not isinstance(text, str) or not text.strip():
+        raise EmptyResponseError(f"OpenAI returned empty output. Raw response: {response}")
+    text = text.strip()
     return _build_result(
         text=text,
         provider="openai",
@@ -148,20 +177,20 @@ def _extract_ollama_text(response_json):
     return ""
 
 
-def _generate_ollama(input_data, *, model=None, max_output_tokens=80):
+def _generate_ollama(input_data, *, model=None, max_output_tokens=None):
     resolved_model = model or OLLAMA_MODEL
     messages = _normalize_messages(input_data)
 
     try:
-        response = ollama_client.post(
-            "/api/chat",
-            json={
-                "model": resolved_model,
-                "messages": messages,
-                "stream": False,
-                "options": {"num_predict": max_output_tokens},
-            },
-        )
+        payload = {
+            "model": resolved_model,
+            "messages": messages,
+            "stream": False,
+        }
+        if max_output_tokens is not None:
+            payload["options"] = {"num_predict": max_output_tokens}
+
+        response = ollama_client.post("/api/chat", json=payload)
         response.raise_for_status()
     except httpx.ConnectError as exc:
         raise ProviderUnavailableError(f"Ollama unavailable: {exc}") from exc
@@ -200,7 +229,7 @@ def generate_text(
     provider="openai",
     connection="api",
     model=None,
-    max_output_tokens=80,
+    max_output_tokens=None,
     reasoning_effort="low",
     stop_sequences=None,
 ):
