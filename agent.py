@@ -14,6 +14,7 @@ from llm_client import (
     default_headers,
     generate_text,
     http_client,
+    set_timeout_seconds as set_llm_client_timeout_seconds,
 )
 
 from spellchecker import SpellChecker
@@ -22,18 +23,24 @@ MODE = "normal"
 OUTPUT = "friendly"
 CONNECTION = "api"
 PROVIDER = "openai"
-LLM_TIMEOUT_SECONDS = 20.0
+LLM_TIMEOUT_SECONDS = 45.0
+LLM_TIMEOUT_GRACE_SECONDS = 0.5
 ACTIVE_REQUEST_STOP = threading.Event()
 LOG_HANDLES = []
 SELF_TEST_ACTIVE = False
+SMOKE_TEST_ACTIVE = False
+LAST_LLM_ELAPSED = None
 
-def configure_runtime(mode, output, connection, provider, log_paths):
-    global MODE, OUTPUT, CONNECTION, PROVIDER
+def configure_runtime(mode, output, connection, provider, log_paths, timeout_seconds=None):
+    global MODE, OUTPUT, CONNECTION, PROVIDER, LLM_TIMEOUT_SECONDS
 
     MODE = mode
     OUTPUT = output
     CONNECTION = connection
     PROVIDER = provider
+    if timeout_seconds is not None:
+        LLM_TIMEOUT_SECONDS = float(timeout_seconds)
+        set_llm_client_timeout_seconds(LLM_TIMEOUT_SECONDS)
 
     close_runtime()
     for path in log_paths:
@@ -98,6 +105,12 @@ def log_debug(message):
         shared_log(message)
 
 
+def log_llm_start(label):
+    if is_debug_mode() or is_verbose_output():
+        if is_debug_mode():
+            shared_log(f"{label} (timeout={LLM_TIMEOUT_SECONDS:.1f}s)")
+
+
 def summarize_detail(detail, max_length=160):
     text = str(detail).strip()
     if not text:
@@ -108,8 +121,38 @@ def summarize_detail(detail, max_length=160):
         return first_line
     return first_line[: max_length - 3].rstrip() + "..."
 
+def extract_router_json(text):
+    if not isinstance(text, str):
+        raise json.JSONDecodeError("Router output is not a string", "", 0)
+
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as first_error:
+        decoder = json.JSONDecoder()
+        for index, char in enumerate(text):
+            if char != "{":
+                continue
+            try:
+                value, _ = decoder.raw_decode(text[index:])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(value, dict):
+                return value
+        raise first_error
+
+def is_unhelpful_direct_answer(user_input, answer_text):
+    if not isinstance(answer_text, str):
+        return True
+
+    normalized_answer = answer_text.strip()
+    if not normalized_answer:
+        return True
+
+    return normalized_answer.casefold() == user_input.strip().casefold()
+
 
 def log_llm_result(result):
+    global LAST_LLM_ELAPSED
     if not is_verbose_output() or not isinstance(result, dict):
         return
 
@@ -118,10 +161,35 @@ def log_llm_result(result):
     attempted_provider = result.get("attempted_provider", provider)
     fallback_used = bool(result.get("fallback_used"))
     fallback_reason = result.get("fallback_reason")
+    attempts = result.get("attempts") or []
 
-    shared_log(f"[LLM RESULT] attempted={attempted_provider} answered={provider} model={model}")
-    if fallback_used:
-        shared_log(f"[LLM FALLBACK] {attempted_provider} -> {provider} | reason: {fallback_reason}")
+    if attempts:
+        for attempt in attempts[:-1]:
+            elapsed = attempt.get("elapsed_seconds")
+            elapsed_text = f"{elapsed:.2f}s" if isinstance(elapsed, (int, float)) else "unknown"
+            reason = summarize_detail(attempt.get("reason", "failed"))
+            shared_log(
+                f"[LLM ATTEMPT] provider={attempt.get('provider')} model={attempt.get('model')} status={attempt.get('status')} elapsed={elapsed_text} reason={reason}"
+            )
+
+        final_attempt = attempts[-1]
+        elapsed = final_attempt.get("elapsed_seconds")
+        elapsed_text = f"{elapsed:.2f}s" if isinstance(elapsed, (int, float)) else (
+            f"{LAST_LLM_ELAPSED:.2f}s" if LAST_LLM_ELAPSED is not None else "unknown"
+        )
+        shared_log(
+            f"[LLM SUCCESS] completed={elapsed_text} provider={provider} model={model}"
+        )
+    else:
+        elapsed_text = f"{LAST_LLM_ELAPSED:.2f}s" if LAST_LLM_ELAPSED is not None else "unknown"
+        shared_log(f"[LLM SUCCESS] completed={elapsed_text} provider={provider} model={model}")
+
+    if fallback_used and fallback_reason and not attempts:
+        shared_log(f"[LLM ATTEMPT] provider={attempted_provider} status=failed reason={summarize_detail(fallback_reason)}")
+    raw_response = result.get("raw_response")
+    if raw_response is not None and provider == "ollama":
+        shared_log(f"[OLLAMA RAW] {summarize_detail(ascii(raw_response), max_length=400)}", stdout=False)
+    LAST_LLM_ELAPSED = None
 
 
 def is_rate_limit_error(error):
@@ -130,6 +198,7 @@ def is_rate_limit_error(error):
 
 def llm_status_label():
     return f"[LLM:{get_provider()}]"
+
 
 def format_usage_summary(response_data):
     usage = response_data.get("usage")
@@ -172,19 +241,15 @@ def print_completion_status(label, elapsed_seconds, response_data=None):
 
 
 def format_completion_status(label, elapsed_seconds, response_data=None):
+    global LAST_LLM_ELAPSED
     usage_summary = format_usage_summary(response_data) if isinstance(response_data, dict) else None
-    model_prefix = f"[{LLM_MODEL}] "
-
+    LAST_LLM_ELAPSED = elapsed_seconds
     if is_debug_mode():
-        line = f"{label} completed in {elapsed_seconds:.2f}s"
+        timeout_text = f"(timeout={LLM_TIMEOUT_SECONDS:.1f}s) "
+        line = f"{label} {timeout_text}completed in {elapsed_seconds:.2f}s"
         if usage_summary:
-            line += f" | usage: {usage_summary}"
-        return line
-
-    if is_verbose_output():
-        line = f"{label} completed in {elapsed_seconds:.2f}s"
-        if usage_summary:
-            line += f" | tokens: {usage_summary}"
+            suffix = "usage" if is_debug_mode() else "tokens"
+            line += f" | {suffix}: {usage_summary}"
         return line
 
     return None
@@ -192,7 +257,7 @@ def format_completion_status(label, elapsed_seconds, response_data=None):
 
 def format_failure_status(label, elapsed_seconds):
     if is_debug_mode() or is_verbose_output():
-        return f"[FAILED] {label} after {elapsed_seconds:.2f}s"
+        return f"[FAILED] {label} (timeout={LLM_TIMEOUT_SECONDS:.1f}s) after {elapsed_seconds:.2f}s"
     return f"failed in {elapsed_seconds:.1f}s"
 
 def reset_stop_signal():
@@ -212,12 +277,13 @@ def start_wait_counter(label):
             if ACTIVE_REQUEST_STOP.is_set():
                 break
             state["seconds"] += 1
-            if SELF_TEST_ACTIVE:
+            if SELF_TEST_ACTIVE or SMOKE_TEST_ACTIVE:
                 continue
             if is_verbose_output():
-                shared_log(f"{label} WAIT {state['seconds']}s")
+                sys.stdout.write("\r" + f"{label} waiting {state['seconds']}s (timeout={LLM_TIMEOUT_SECONDS:.1f}s)")
+                sys.stdout.flush()
             else:
-                sys.stdout.write("\r" + "waiting" + "." * state["seconds"])
+                sys.stdout.write("\r" + "." * state["seconds"])
                 sys.stdout.flush()
 
     thread = threading.Thread(target=run)
@@ -227,17 +293,21 @@ def start_wait_counter(label):
         stop_event.set()
         thread.join()
 
-        if SELF_TEST_ACTIVE:
+        if SELF_TEST_ACTIVE or SMOKE_TEST_ACTIVE:
             if final_message:
                 for handle in LOG_HANDLES:
                     handle.write(final_message + "\n")
                     handle.flush()
             elif state["seconds"] > 0:
-                sys.stdout.write("\r" + " " * (7 + state["seconds"]) + "\r")
+                sys.stdout.write("\r" + " " * state["seconds"] + "\r")
                 sys.stdout.flush()
             return
 
         if is_verbose_output():
+            if state["seconds"] > 0:
+                clear_width = len(f"{label} waiting {state['seconds']}s (timeout={LLM_TIMEOUT_SECONDS:.1f}s)")
+                sys.stdout.write("\r" + " " * clear_width + "\r")
+                sys.stdout.flush()
             if final_message:
                 shared_log(
                     final_message,
@@ -252,7 +322,7 @@ def start_wait_counter(label):
                     terminal_message = final_message if stdout_message is None else stdout_message
                     sys.stdout.write("\r" + terminal_message + "\n")
             else:
-                sys.stdout.write("\r" + " " * (7 + state["seconds"]) + "\r")
+                sys.stdout.write("\r" + " " * state["seconds"] + "\r")
             sys.stdout.flush()
         elif final_message and stdout_message is not False:
             shared_log(final_message, stdout_message=stdout_message)
@@ -280,7 +350,7 @@ def run_with_hard_timeout(func, label):
     thread.start()
 
     stop_wait_counter = start_wait_counter(label)
-    deadline = time.monotonic() + LLM_TIMEOUT_SECONDS
+    deadline = time.monotonic() + LLM_TIMEOUT_SECONDS + LLM_TIMEOUT_GRACE_SECONDS
     started_at = time.monotonic()
 
     try:
@@ -303,13 +373,18 @@ def run_with_hard_timeout(func, label):
         raise
     finally:
         completion_status = locals().get("completion_status") or ""
-        suppress_stdout = SELF_TEST_ACTIVE and completion_status.startswith("[FAILED]")
+        suppress_stdout = (SELF_TEST_ACTIVE or SMOKE_TEST_ACTIVE) and completion_status.startswith("[FAILED]")
         stop_wait_counter(
             locals().get("completion_status"),
             stdout_message=False if suppress_stdout else None,
         )
         if done.is_set():
             thread.join()
+
+
+def set_smoke_test_active(active):
+    global SMOKE_TEST_ACTIVE
+    SMOKE_TEST_ACTIVE = active
 
 spell = SpellChecker()
 def run_self_test():
@@ -494,15 +569,15 @@ TOOLS = {
 }
 
 ROUTER_SYSTEM_PROMPT = (
-    'Return one compact single-line JSON object only. '
-    'Use {"tool":"search_tool","input":"..."} for current, uncertain, or external-lookup queries; '
-    'otherwise use {"tool":"none","input":"..."} with the shortest correct answer.'
+    'Return ONLY JSON: {"tool":"none|search_tool","input":"","answer":""}. '
+    'If tool="none", input must be empty and answer must contain the brief user-facing reply. '
+    'If tool="search_tool", input must be a short search query matching the user request and answer must be empty. '
+    'Use tool="none" for greetings, jokes, vague short inputs, and normal conversation. '
+    'Use tool="search_tool" only for factual or external information that should be looked up. '
+    'Do not invent details or turn a vague prompt into a different question. JSON only.'
 )
 DIRECT_ANSWER_SYSTEM_PROMPT = (
     "Answer directly. Respond in the shortest correct answer. If unclear, say so briefly."
-)
-SYNTHESIS_SYSTEM_PROMPT = (
-    "Use the tool result as primary source. Respond in the shortest correct answer. Briefly note uncertainty only if needed."
 )
 def safe_correct_text(text):
     words = text.split()
@@ -519,8 +594,25 @@ def safe_correct_text(text):
             corrected.append(word)
             continue
 
-        fixed = spell.correction(word)
-        corrected.append(fixed if fixed else word)
+        prefix_end = 0
+        while prefix_end < len(word) and not word[prefix_end].isalnum():
+            prefix_end += 1
+
+        suffix_start = len(word)
+        while suffix_start > prefix_end and not word[suffix_start - 1].isalnum():
+            suffix_start -= 1
+
+        prefix = word[:prefix_end]
+        core = word[prefix_end:suffix_start]
+        suffix = word[suffix_start:]
+
+        if not core:
+            corrected.append(word)
+            continue
+
+        fixed = spell.correction(core)
+        corrected_core = fixed if fixed else core
+        corrected.append(prefix + corrected_core + suffix)
 
     return " ".join(corrected)
 
@@ -546,7 +638,7 @@ def run_agent(user_input):
                 return calc_result
 
             try:
-                log_debug(f"{llm_status_label()} (timeout={LLM_TIMEOUT_SECONDS}s)")
+                log_llm_start(llm_status_label())
                 # If parsing/evaluation fails, fall back to a direct model answer instead of routing through tools.
                 response = run_with_hard_timeout(
                     lambda: generate_text(
@@ -570,17 +662,16 @@ def run_agent(user_input):
                 log_llm_result(response)
                 return response["text"]
             except Exception as e:
-                log_debug(f"[LLM FALLBACK ERROR TYPE] {type(e).__name__}")
-                log_debug(f"[LLM FALLBACK ERROR] {e}")
-                return f"OpenAI API error during math fallback: {type(e).__name__}: {e}"
+                shared_log(f"[LLM FALLBACK ERROR] {type(e).__name__}: {e}", stdout=False)
+                return f"LLM error during math fallback: {type(e).__name__}: {e}"
 
-    log_debug(f"[LLM] {user_input}")
+    log_debug(f"[LLM INPUT] {user_input}")
 
     if is_local_connection():
         return "LLM call skipped: local connection mode"
 
     try:
-        log_debug(f"{llm_status_label()} (timeout={LLM_TIMEOUT_SECONDS}s)")
+        log_llm_start(llm_status_label())
         response = run_with_hard_timeout(
             lambda: generate_text(
                 [
@@ -591,57 +682,39 @@ def run_agent(user_input):
                 connection=CONNECTION,
                 model=get_provider_model(),
                 reasoning_effort="low",
-                stop_sequences=["\n"],
             ),
             llm_status_label(),
         )
 
         log_llm_result(response)
         reply_text = response["text"]
-        log_debug(f"[ROUTER RAW] {reply_text}")
+        shared_log(f"[ROUTER RAW] {reply_text}", stdout=False)
     except Exception as e:
-        log_debug(f"[LLM ROUTER ERROR TYPE] {type(e).__name__}")
-        log_debug(f"[LLM ROUTER ERROR] {e}")
-        return f"OpenAI API error during tool routing: {type(e).__name__}: {e}"
+        shared_log(f"[LLM ROUTER ERROR] {type(e).__name__}: {e}", stdout=False)
+        return f"LLM error during tool routing: {type(e).__name__}: {e}"
 
     try:
-        decision = json.loads(reply_text)
+        decision = extract_router_json(reply_text)
     except json.JSONDecodeError:
         return f"Model returned invalid JSON: {reply_text}"
 
     tool_name = decision.get("tool")
     tool_input = decision.get("input", "")
+    direct_answer = decision.get("answer", "")
+    router_line = f"[LLM ROUTER] tool={tool_name!r} input={tool_input!r} answer={direct_answer!r}"
+    if tool_name == "none":
+        shared_log(router_line, stdout=False)
+    else:
+        log_debug(router_line)
 
     if tool_name in TOOLS:
         log_debug(f"[SEARCH] {tool_input}")
         tool_result = TOOLS[tool_name](tool_input)
-
-        # Turn raw tool output into a user-facing answer in a second model pass.
-        log_debug(f"{llm_status_label()} (timeout={LLM_TIMEOUT_SECONDS}s)")
-        response = run_with_hard_timeout(
-            lambda: generate_text(
-                [
-                    {
-                        "role": "system",
-                        "content": SYNTHESIS_SYSTEM_PROMPT
-                    },
-                    {
-                        "role": "user",
-                        "content": f"Q:{user_input}\nR:{tool_result}"
-                    },
-                ],
-                provider=get_provider(),
-                connection=CONNECTION,
-                model=get_provider_model(),
-                reasoning_effort="low",
-            ),
-            llm_status_label(),
-        )
-
-        log_llm_result(response)
-        return response["text"]
+        shared_log(f"[LLM OUTPUT] {tool_result}", stdout=False)
+        return tool_result
 
     if tool_name == "none":
-        if tool_input.strip().lower() == "none":
+        if is_unhelpful_direct_answer(user_input, direct_answer):
             return "I'm not sure how to respond to that."
-        return tool_input
+        shared_log(f"[LLM OUTPUT] {direct_answer}", stdout=False)
+        return direct_answer

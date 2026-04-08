@@ -73,6 +73,13 @@ Keep entries brief and practical. Prefer current state over a long historical lo
 - Expanded `--self-test` with provider-aware generation checks for `openai`, `ollama`, and `auto`.
 - Relaxed aggressive output caps after GPT-5-nano self-tests showed that tiny visible answers can still require much larger total output-token budgets.
 - Reduced redundant OpenAI self-test calls and allowed `auto` self-test to report `SKIP` on fallback rate limits instead of a misleading hard failure.
+- Reworked non-deterministic routing so one LLM JSON response now drives both direct answers and tool selection.
+- Added a narrow router JSON extractor so recoverable malformed model output can still be used.
+- Made `provider=auto` the default CLI provider and added `--timeout` for per-run timeout control.
+- Split `auto` timeout budget between the local Ollama attempt and OpenAI fallback.
+- Refined verbose terminal output so it now emphasizes input, provider attempts, provider success, and the final answer while keeping raw payloads in `logs/latest.log`.
+- Shortened the router prompt after testing showed the longer policy-heavy version slowed local Ollama responses.
+- Updated the current local Ollama model target to `qwen3:1.7b`.
 
 ## Recent User Requests
 
@@ -90,6 +97,11 @@ Keep entries brief and practical. Prefer current state over a long historical lo
 - Use a branch for that provider refactor rather than changing the current checkpoint in place.
 - Separate the LLM request layer from `agent.py` as the first small step toward multi-provider support.
 - Add Ollama transport and explicit local-first fallback behavior while keeping `connection` and `provider` separate.
+- Make `provider=auto` the default.
+- Make timeout configurable from the CLI.
+- Keep verbose terminal output readable while logs keep the raw details.
+- Avoid a naive deterministic factual detector for now.
+- Leave dedicated math fallback as a future action item.
 
 ## Current Short-Term Goal
 
@@ -99,8 +111,8 @@ Keep entries brief and practical. Prefer current state over a long historical lo
 - Keep friendly output compact and clean.
 - Make future sessions easier by keeping docs aligned with the code.
 - Keep the new `llm_client.py` boundary stable and easy to reason about.
-- Re-test the new Ollama and `auto` provider behavior in a real local environment.
-- Avoid a broad redesign; keep the refactor small and centered on provider logic.
+- Keep the current local-first `auto` flow usable and easy to inspect.
+- Avoid a broad redesign; keep further fixes narrow and centered on routing policy and provider behavior.
 
 ## Known Issues And Things To Verify
 
@@ -111,6 +123,9 @@ Keep entries brief and practical. Prefer current state over a long historical lo
 - Runtime behavior now depends on the interaction between `mode`, `output`, and `connection`; CLI resolution changes should be re-tested carefully.
 - `agent.py` is still the highest-pressure file, but provider transport is now separated into `llm_client.py`.
 - Ollama availability and local-first fallback behavior should be re-tested outside the sandbox because local model availability is environment-specific.
+- The current local model (`qwen3:1.7b`) is much more usable than earlier local attempts, but it can still answer factual/current questions directly instead of routing to search.
+- Calculator parse failure still uses a direct LLM fallback; the intended dedicated math fallback remains a future item.
+- `auto` timeout splitting is now in place, but very small budgets can still fail simply because neither provider gets enough useful time to answer.
 
 ## What We Believe Is True Right Now
 
@@ -120,12 +135,12 @@ Keep entries brief and practical. Prefer current state over a long historical lo
 - The latest uncommitted checkpoint adds the runtime config split, shared logging, and doc updates around that work.
 - The smallest justified refactor was to separate provider transport from orchestration so multiple LLM backends can be supported cleanly.
 - The provider layer now supports OpenAI, Ollama, and explicit `auto` fallback rules while keeping `connection` separate from `provider`.
+- The current non-deterministic path uses one structured router call per request.
+- The current default provider is `auto`, with local Ollama attempted first and OpenAI fallback when allowed.
 
 ## Suggested Next Steps
 
-- Re-run a quick README sanity check in the editor after the rewrite.
-- Re-run the smoke test and a couple of manual CLI combinations after the latest runtime-config changes.
-- Decide whether to commit the current checkpoint.
-- Re-run provider-specific manual checks for `--provider openai`, `--provider ollama`, and `--provider auto`.
-- If provider behavior looks stable, commit this branch checkpoint before any further cleanup.
-- If future work expands the agent, keep `docs/CONTEXT.md`, `docs/ROADMAP.md`, and `README.md` aligned.
+- Commit the current provider/fallback/routing checkpoint if the docs look right.
+- Re-run a couple of manual checks for `--provider ollama` and default `auto` after any further prompt tweaks.
+- Decide whether to enforce factual/current lookup in code rather than relying on prompt-only routing.
+- Keep future work narrow around routing policy, dedicated math fallback, and tool quality.

@@ -25,7 +25,7 @@ def main():
     parser.add_argument(
         "--provider",
         choices=["openai", "ollama", "auto"],
-        default="openai",
+        default="auto",
     )
     parser.add_argument(
         "--self-test",
@@ -35,6 +35,11 @@ def main():
     parser.add_argument(
         "--log-file",
         help="Optional additional log file to append shared debug/status output to.",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        help="LLM timeout in seconds for this run.",
     )
     args = parser.parse_args()
 
@@ -62,6 +67,7 @@ def main():
         connection=resolved_connection,
         provider=args.provider,
         log_paths=log_paths,
+        timeout_seconds=args.timeout,
     )
 
     def run_with_controls(func):

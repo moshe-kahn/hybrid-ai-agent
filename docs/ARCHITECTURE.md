@@ -24,8 +24,8 @@ Routing
   |    |- success -> return result
   |    `- failure -> LLM fallback when API connection is enabled
   `- LLM Router
-       |- search_tool -> tool -> LLM synthesis
-       `- none -> direct LLM response
+       |- search_tool -> tool result
+       `- none -> direct answer from router JSON
 ```
 
 ---
@@ -68,6 +68,15 @@ Behavior:
   * direct response
   * tool usage
 
+Current contract:
+
+* One LLM call returns strict JSON with:
+  * `tool`
+  * `input`
+  * `answer`
+* If `tool == "none"`, `answer` is returned directly
+* If `tool == "search_tool"`, `input` is sent to DuckDuckGo and the tool result is returned directly
+
 Design goals:
 
 * Keep routing simple and inspectable
@@ -81,13 +90,7 @@ Current tools:
 
 * `search_tool` (DuckDuckGo)
 * `calculator_tool` (local)
-* OpenAI transport and response parsing (`llm_client.py`)
-
-Pattern:
-
-```text
-LLM -> tool -> LLM
-```
+* provider transport and response parsing (`llm_client.py`)
 
 ---
 
@@ -120,10 +123,13 @@ Output layer:
 * `verbose` prints:
 
   * corrected input
-  * routing decisions
+  * provider attempts
+  * provider success
+  * routing decisions for tool-selected requests
   * tool calls
   * wait status
-  * raw LLM output
+
+Raw provider payloads and full router output are kept in `logs/latest.log` instead of printed to the terminal.
 
 Connection layer:
 
@@ -135,6 +141,8 @@ Provider layer:
 * `openai` selects the hosted OpenAI backend
 * `ollama` selects the local Ollama backend
 * `auto` tries Ollama first and falls back to OpenAI only on transport, timeout, availability, or empty-output failure when hosted calls are allowed
+* `auto` is the current CLI default
+* `--timeout` sets the total per-run budget; in `auto`, the provider layer splits that budget between the local attempt and hosted fallback
 
 ---
 
@@ -164,18 +172,18 @@ Provider layer:
 * No conversational memory
 * Tool routing is single-step only
 * Search results are shallow
-* JSON parsing for routing can fail
+* JSON parsing is more tolerant now, but malformed model output can still produce poor routing decisions
 * No confidence scoring or validation
 * Logging is lightweight and file-based rather than structured tracing
-* LLM provider logic is currently OpenAI-specific even though the transport code is now separated from orchestration
+* Factual or current-event questions are not yet enforced deterministically; a local model can still answer directly when policy would prefer search
+* Calculator parse failure still uses a direct LLM fallback instead of a dedicated math/search API
 
 ---
 
 ## Future Architectural Direction
 
 * Tool registry
-* Multi-provider routing
 * Planner/executor split
 * Stateful sessions
-* Structured outputs for routing reliability
-* Small provider-layer extraction so OpenAI and Ollama can share one orchestration path
+* Stronger factual/search policy enforcement
+* Dedicated calculator fallback such as Wolfram Alpha

@@ -9,6 +9,9 @@ This file tracks active bugs, quirks, and things that should be re-verified afte
 - Runtime behavior now depends on the interaction between `mode`, `output`, and `connection`; CLI resolution changes should be re-tested carefully.
 - `agent.py` currently holds most provider, timeout, wait-status, and orchestration logic; keep future refactors narrow so stability does not regress.
 - Ollama availability depends on the local environment; provider behavior may differ between the development machine and the sandboxed verification environment.
+- The current local model can still violate the desired factual/current lookup policy by answering directly instead of selecting search.
+- Calculator parse failure still uses a direct LLM fallback instead of a dedicated math/search API path.
+- Very small `--timeout` values can still fail simply because neither provider gets enough useful budget.
 
 ## Re-Test After Relevant Changes
 
@@ -31,7 +34,11 @@ This file tracks active bugs, quirks, and things that should be re-verified afte
 - `py main.py --provider openai`
 - `py main.py --provider ollama`
 - `py main.py --provider auto`
+- `py main.py --timeout 30`
+- `py main.py --output verbose`
 - test local-only, OpenAI-only, and local-first fallback behavior separately
+- confirm verbose terminal output stays concise while raw router/provider payloads remain in `logs/latest.log`
+- verify default `auto` fallback when Ollama is slow or unavailable
 
 ## Resolved Recently
 

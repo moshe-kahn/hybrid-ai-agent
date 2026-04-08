@@ -46,3 +46,11 @@ Use this file for dated summaries of meaningful work completed during a session.
 - Expanded `--self-test` so it also reports provider-specific generation checks for `openai`, `ollama`, and `auto`.
 - Removed overly aggressive OpenAI output caps from the main generation path and relaxed self-test limits after observing truncated incomplete responses.
 - Reduced redundant OpenAI self-test calls and treated `auto` rate-limit fallback as `SKIP` instead of `FAIL`.
+- Reworked non-deterministic routing so one LLM JSON response now drives both direct answers and tool selection.
+- Added a narrow router JSON extractor so recoverable malformed model output can still be used.
+- Made `provider=auto` the default CLI provider.
+- Added `--timeout` for per-run timeout control.
+- Split `auto` timeout budget between the local Ollama attempt and OpenAI fallback.
+- Refined verbose terminal output to show input, provider attempts, provider success, and the final answer while keeping raw payloads in the log file.
+- Shortened the router prompt substantially after testing showed the longer version slowed local Ollama responses.
+- Switched the current local Ollama model target to `qwen3:1.7b` as a better balance than the earlier tested models.

@@ -130,24 +130,24 @@ Goal:
 
 ### 8. Local LLM Provider (Ollama) With Fallback
 
-Add a local LLM option via Ollama and support a practical fallback strategy.
+Implemented in the current branch in a usable first form. Keep improving it rather than redesigning it.
 
-Target behavior:
+Current behavior:
 
 * `openai` -> always use OpenAI
 * `ollama` -> always use the local model
-* `auto` -> try Ollama first, then fall back to OpenAI on transport or availability failure
+* `auto` -> try Ollama first, then fall back to OpenAI on eligible failure
 
 Implementation preference:
 
 * Keep the refactor small
-* Extract only the provider transport layer first
 * Avoid a broad multi-folder redesign
 
-Goal:
+Still needed:
 
-* Enable local-first usage without destabilizing the current CLI
-* Keep provider behavior inspectable and easy to debug
+* improve factual/current lookup enforcement
+* keep local-model prompt and timeout behavior practical
+* continue improving verbose diagnostics without making terminal output noisy
 
 ---
 

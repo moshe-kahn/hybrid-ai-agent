@@ -30,20 +30,26 @@ The system prioritizes:
 
 * **Hybrid routing**
 
-  * LLM decides between direct response and tool usage
+  * LLM decides between direct response and tool usage in one structured JSON pass
 
 * **Search integration**
 
   * Uses DuckDuckGo for external queries
+
+* **Multi-provider LLM support**
+
+  * Supports `openai`, `ollama`, and `auto`
+  * `auto` tries local Ollama first and falls back to OpenAI when needed
 
 * **Runtime configuration**
 
   * `--mode normal` defaults to friendly output with API-backed LLM calls
   * `--mode debug` defaults to verbose output with local-only behavior
   * `--provider` selects the LLM backend strategy: `openai`, `ollama`, or `auto`
+  * `--provider auto` is the current default
   * `--output verbose` enables internal status logging without changing mode
-  * `--connection local` skips LLM calls without changing mode
-  * `--provider auto` tries Ollama first and uses OpenAI only when hosted calls are permitted and fallback is necessary
+  * `--connection local` forbids hosted OpenAI fallback
+  * `--timeout` sets the per-run LLM timeout budget in seconds
 
 * **Interactive CLI controls**
 
@@ -76,8 +82,8 @@ Routing Logic
   |    |- success -> return result
   |    `- failure -> LLM fallback when API connection is enabled
   `- LLM Router
-       |- search_tool -> tool -> LLM synthesis
-       `- none -> direct response
+       |- search_tool -> tool result
+       `- none -> direct response from router JSON
 ```
 
 ---
@@ -130,7 +136,7 @@ Default resolution:
 
 * `--mode normal` -> `--output friendly` + `--connection api`
 * `--mode debug` -> `--output verbose` + `--connection local`
-* `--provider openai` is the current default until Ollama transport lands
+* `--provider auto` is the current default
 
 You can override `--output` or `--connection` explicitly when you want a mixed configuration.
 
@@ -175,6 +181,7 @@ logs/           # latest run log
 
    ```text
    OPENAI_API_KEY=your_key_here
+   OLLAMA_MODEL=qwen3:1.7b
    ```
 
 ---
@@ -190,6 +197,7 @@ Useful variants:
 ```text
 py main.py --mode normal --output verbose
 py main.py --mode debug
+py main.py --provider ollama --output verbose --timeout 300
 py main.py --log-file logs/session.log
 ```
 
@@ -222,6 +230,7 @@ This runs a progressive check of:
 * Use LLMs for reasoning, not everything
 * Keep components modular and inspectable
 * Make behavior debuggable via execution modes and output/connection overrides
+* Prefer local-first behavior with explicit fallback visibility
 
 ---
 
@@ -231,7 +240,7 @@ This runs a progressive check of:
 * Multi-step tool chaining
 * Conversation memory
 * Expanded math support
-* Structured output enforcement
+* Stronger factual-search enforcement
 
 ---
 
